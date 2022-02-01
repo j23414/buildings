@@ -2,7 +2,6 @@
 
 import sys
 import argparse
-import pandas as pd
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -20,9 +19,22 @@ def parse_args():
     )
     return parser.parse_args()
 
+build_text = """
+inputs:
+- name: {build}
+  metadata: {metadata_tsv}
+  sequences: {sequence_fasta}
+- name: references
+  metadata: data/references_metadata.tsv
+  sequences: data/references_sequences.fasta
+"""
+
+def mk_buildyaml(sequence_fasta, metadata_tsv, build="example"):
+    print(build_text.format(sequence_fasta = sequence_fasta, metadata_tsv = metadata_tsv, build = build))
+
 def main():
     args = parse_args()
-
+    mk_buildyaml(args.sequence, args.metadata)
 
 if __name__ == "__main__":
     main()
