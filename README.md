@@ -6,3 +6,4 @@ Feature explore:
 * typing (pypi or mypy)
 * tests (pytests)
 * if time, wxPython? (there's probably a better GUI generator now...)
+* test reusable functions
