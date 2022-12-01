@@ -29,50 +29,74 @@ examples.
   merged_df = merge_two(one_df, two_df)
   print(merged_df)
 """
-
 # ===== Dependencies
-import pandas as pd
-import numpy as np
-
-import sys
 import argparse
 import os
+import sys
+
+import numpy as np
+import pandas as pd
+
 
 # (2) Define command line arguments
 def parse_args():
     # Main help command
     parser = argparse.ArgumentParser(
-        description = "USAGE: python uniq_merge.py --cache 'data/zika.tsv' --new 'data/ncbi.tsv'"
+        description="Harmonize and merge pandas DataTables such that conflicting data is not lost."
     )
     # Add first argument
+    parser.add_argument("--cache", help="Path to cache of cleaned data.", required=True)
+    parser.add_argument("--new", help="Path to new data.", required=True)
     parser.add_argument(
-        "--cache",
-        help = "Path to cache of cleaned data.",
-        required = True
+        "--cache_delim",
+        default="\t",
+        help="delimiter for cache of cleaned data.",
+        required=False,
     )
     parser.add_argument(
-        "--new",
-        help = "Path to new data.",
-        required = True
+        "--new_delim", default="\t", help="delimiter for new data.", required=False
     )
-    
+    parser.add_argument(
+        "--outfile",
+        default="merged_cache_new.tsv",
+        help="Merged file [default: merged_cache_new.tsv].",
+        required=False,
+    )
+    parser.add_argument(
+        "--outfile_delim",
+        default="\t",
+        help="delimiter for outfile data.",
+        required=False,
+    )
+    parser.add_argument(
+        "--groupby_col",
+        default="strain",
+        help="Group by column name [default 'strain'].",
+        required=False,
+    )
+
     return parser.parse_args()
 
-# ===== Reusable functions
-def _drop_uninformative_cols(df:pd.DataFrame) -> pd.DataFrame:
-    """Drops uninformative columns from a pandas DataFrame for being all empty. Used by merge_two."""
-    return(df.replace('', np.nan).replace('-N/A-', np.nan).dropna(how = 'all', axis = 1))
 
-def _uniq_merge(x: 'pd.Series[str]') -> str:
+# ===== Reusable functions
+def _drop_uninformative_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Drops uninformative columns from a pandas DataFrame for being all empty. Used by merge_two."""
+    return df.replace("", np.nan).replace("-N/A-", np.nan).dropna(how="all", axis=1)
+
+
+def _uniq_merge(x: "pd.Series[str]") -> str:
     """Merges unique values by group and joins conflicting values in a comma separated list. Used by merge_two."""
-    cx = x.replace('', np.nan).replace('-N/A-', np.nan).dropna().unique()
-    if(len(cx) >= 1):
-        return(','.join(cx))
+    cx = x.replace("", np.nan).replace("-N/A-", np.nan).dropna().unique()
+    if len(cx) >= 1:
+        return ",".join(cx)
     else:
-        return('')
+        return ""
+
 
 # Merge and harmonize two datasets, flag conflicts with commas
-def merge_two(df1:pd.DataFrame, df2: pd.DataFrame, groupby_col: str = 'strain') -> pd.DataFrame:
+def merge_two(
+    df1: pd.DataFrame, df2: pd.DataFrame, groupby_col: str = "strain"
+) -> pd.DataFrame:
     """Harmonizes and merges two pandas DataFrames.
 
     Takes two pandas DataFrames through the following 3 steps:
@@ -100,46 +124,26 @@ def merge_two(df1:pd.DataFrame, df2: pd.DataFrame, groupby_col: str = 'strain') 
     # Drop uninformative columns
     df1 = _drop_uninformative_cols(df1)
     df2 = _drop_uninformative_cols(df2)
-    
+
     # Harmonize columns
     new_col = [x for x in df2.columns.tolist() if x not in set(df1.columns.tolist())]
-    h_df1_df = df1.reindex(df1.columns.tolist() + new_col, axis = 1)
-    h_df2_df = df2.reindex(df1.columns.tolist() + new_col, axis = 1)
-    
+    h_df1_df = df1.reindex(df1.columns.tolist() + new_col, axis=1)
+    h_df2_df = df2.reindex(df1.columns.tolist() + new_col, axis=1)
+
     # Unique and merge conflicting data
     merged_df = pd.concat([h_df1_df, h_df2_df]).groupby(groupby_col).agg([_uniq_merge])
-    return(merged_df)
+    return merged_df
 
 
 def main():
     args = parse_args()
 
-    print(args)
-    # ===== Test Data and Demo 
-    print('one_df:')
-    
-    one_df = pd.DataFrame(
-        {'strain': ['A', 'B', 'C'],
-        'date': ['2022-01-01', '2022-02-02', '2022-03-03'],
-        'clade': ['alpha', 'beta', 'gamma'],
-        'geo':['iowa', 'washington', np.nan]})
-    one_df['age'] = '-N/A-'
-    print(one_df)
-    
-    print('two_df:')
-    two_df = pd.DataFrame(
-        {'strain': ['D', 'B', 'C'],
-        'clade': ['delta', 'beta2', 'gamma'],
-        'patient': ['bob', 'marley', 'rick']})
-    two_df['col_date'] = np.nan
-    two_df['group'] = ''
-    print(two_df)
-    
-    print('merged_df:')
-    
-    x_df = merge_two(one_df, two_df)
-    print(x_df)
+    old = pd.read_csv(args.cache, sep=args.cache_delim, header=0)
+    new = pd.read_csv(args.new, sep=args.new_delim, header=0)
+
+    merged = merge_two(old, new, groupby_col=args.groupby_col)
+    merged.to_csv(args.outfile, sep=args.outfile_delim)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
