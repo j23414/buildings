@@ -1,4 +1,4 @@
-#! /usr/bin/env python3
+#! /usr/bin/env python
 
 """Harmonize and merge pandas DataTables such that conflicting data is not lost.
 
@@ -63,6 +63,12 @@ def parse_args():
         required=False,
     )
     parser.add_argument(
+        "--outfile_excel",
+        default="merged_cache_new.xlsx",
+        help="Merged file [default: merged_cache_new.xlsx].",
+        required=False,
+    )
+    parser.add_argument(
         "--outfile_delim",
         default="\t",
         help="delimiter for outfile data.",
@@ -86,12 +92,15 @@ def _drop_uninformative_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 def _uniq_merge(x: "pd.Series[str]") -> str:
     """Merges unique values by group and joins conflicting values in a comma separated list. Used by merge_two."""
-    cx = x.replace("", np.nan).replace("-N/A-", np.nan).dropna().unique()
+    cx = x.replace("", np.nan).replace("-N/A-", np.nan).replace("?",np.nan).dropna().unique()
     if len(cx) >= 1:
-        return ",".join(cx)
+        # split substrings by delimiter and flatten list
+        my_list = [i.split(',') for i in cx]
+        flat_list = [item for sublist in my_list for item in sublist]
+        # return unique values joined by delimiter
+        return ",".join(list(set(flat_list)))
     else:
         return ""
-
 
 # Merge and harmonize two datasets, flag conflicts with commas
 def merge_two(
@@ -132,17 +141,19 @@ def merge_two(
 
     # Unique and merge conflicting data
     merged_df = pd.concat([h_df1_df, h_df2_df]).groupby(groupby_col).agg([_uniq_merge])
+    merged_df.columns=[i[0] for i in merged_df.columns]
     return merged_df
 
 
 def main():
     args = parse_args()
 
-    old = pd.read_csv(args.cache, sep=args.cache_delim, header=0)
-    new = pd.read_csv(args.new, sep=args.new_delim, header=0)
+    old = pd.read_csv(args.cache, sep=args.cache_delim, header=0, dtype=str)
+    new = pd.read_csv(args.new, sep=args.new_delim, header=0, dtype=str)
 
     merged = merge_two(old, new, groupby_col=args.groupby_col)
     merged.to_csv(args.outfile, sep=args.outfile_delim)
+    merged.to_excel(args.outfile_excel)
 
 
 if __name__ == "__main__":
