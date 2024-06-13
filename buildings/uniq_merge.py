@@ -80,6 +80,13 @@ def parse_args():
         help="Group by column name [default 'strain'].",
         required=False,
     )
+    parser.add_argument(
+        "--conflict_resolution",
+        choices=["left", "right", "join"],
+        default="join",
+        help="Specify how to handle conflicting values [default: 'join'].",
+        required=False,
+    )
 
     return parser.parse_args()
 
@@ -90,21 +97,30 @@ def _drop_uninformative_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df.replace("", np.nan).replace("-N/A-", np.nan).dropna(how="all", axis=1)
 
 
-def _uniq_merge(x: "pd.Series[str]") -> str:
-    """Merges unique values by group and joins conflicting values in a comma separated list. Used by merge_two."""
-    cx = x.replace("", np.nan).replace("-N/A-", np.nan).replace("?",np.nan).dropna().unique()
+def _resolve_conflicts(x: "pd.Series[str]", resolution: str) -> str:
+    """Resolves conflicting values based on the specified resolution strategy. Used by merge_two."""
+    cx = x.replace("", np.nan).replace("-N/A-", np.nan).replace("?", np.nan).dropna().unique()
     if len(cx) >= 1:
-        # split substrings by delimiter and flatten list
-        my_list = [i.split(',') for i in cx]
-        flat_list = [item for sublist in my_list for item in sublist]
-        # return unique values joined by delimiter
-        return ",".join(list(set(flat_list)))
+        if resolution == "left":
+            return cx[0]
+        elif resolution == "right":
+            return cx[-1]
+        else:  # join: Merges unique values by group and joins conflicting values in a comma separated list.
+            # split substrings by delimiter and flatten list
+            my_list = [i.split(',') for i in cx]
+            flat_list = [item for sublist in my_list for item in sublist]
+            # return unique values joined by delimiter
+            return ",".join(list(set(flat_list)))
     else:
         return ""
 
+
 # Merge and harmonize two datasets, flag conflicts with commas
 def merge_two(
-    df1: pd.DataFrame, df2: pd.DataFrame, groupby_col: str = "strain"
+    df1: pd.DataFrame,
+    df2: pd.DataFrame,
+    groupby_col: str = "strain",
+    conflict_resolution: str = "join",
 ) -> pd.DataFrame:
     """Harmonizes and merges two pandas DataFrames.
 
@@ -114,7 +130,7 @@ def merge_two(
     2. Harmonizes their columns such that columns in the left DataFrame are preferentially listed first
     3. Combines the DataFrames by group defined in groupby_col such that:
       * unique values are merged
-      * conflicting values are joined in a comma separated list
+      * conflicting values are handled based on the specified conflict_resolution strategy
 
     Args:
       df1:
@@ -123,6 +139,11 @@ def merge_two(
         The right hand side (rhs) pandas DataTable, will be merged with df1 and new columns will be listed later.
       groupby_col:
         The id column that is shared by both df1 and df2 to allow for merging and harmonization of datasets
+      conflict_resolution:
+        Specify how to handle conflicting values. Options are:
+          'left': Use the value from the left DataFrame (df1)
+          'right': Use the value from the right DataFrame (df2)
+          'join': Join conflicting values using a comma separator (default)
 
     Returns:
       A merged and harmonized dataset of containing information from df1 and df2.
@@ -140,7 +161,9 @@ def merge_two(
     h_df2_df = df2.reindex(df1.columns.tolist() + new_col, axis=1)
 
     # Unique and merge conflicting data
-    merged_df = pd.concat([h_df1_df, h_df2_df]).groupby(groupby_col).agg([_uniq_merge])
+    merged_df = pd.concat([h_df1_df, h_df2_df]).groupby(groupby_col).agg(
+        lambda x: _resolve_conflicts(x, conflict_resolution)
+    )
     merged_df.columns=[i[0] for i in merged_df.columns]
     return merged_df
 
@@ -151,7 +174,12 @@ def main():
     old = pd.read_csv(args.cache, sep=args.cache_delim, header=0, dtype=str)
     new = pd.read_csv(args.new, sep=args.new_delim, header=0, dtype=str)
 
-    merged = merge_two(old, new, groupby_col=args.groupby_col)
+    merged = merge_two(
+        old,
+        new,
+        groupby_col=args.groupby_col,
+        conflict_resolution=args.conflict_resolution
+    )
     merged.to_csv(args.outfile, sep=args.outfile_delim)
     merged.to_excel(args.outfile_excel)
 
